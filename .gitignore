@@ -1,19 +1,38 @@
-# Ignore logs
-*.log
+# Sensitive information
+config.json
 
-# Ignore screenshots
+# Logs and screenshots
+*.log
 *.png
 
-# Ignore virtual environment
+# Python environment
 yosemite_env/
-
-# Ignore previous results
-last_results.json
-
-# Ignore any temporary files
-*.tmp
-
-# Ignore Python bytecode
 __pycache__/
 *.py[cod]
 *$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db

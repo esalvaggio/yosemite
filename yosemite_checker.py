@@ -192,17 +192,30 @@ class YosemiteSeleniumChecker:
                 # Set a realistic user agent (use a recent Chrome version)
                 options.add_argument("user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
                 
-                # Anti-bot detection configurations
+                # Enhanced anti-bot detection configurations
                 options.add_argument("--disable-blink-features=AutomationControlled")  # Hide automation
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 options.add_experimental_option("useAutomationExtension", False)
                 
-                # Add commonly expected browser features
+                # Add more realistic browser settings
                 options.add_argument("--lang=en-US,en;q=0.9")
                 options.add_argument("--disable-web-security")  # Helps with some CORS issues
-                
-                # Make sure cookies are enabled
                 options.add_argument("--enable-cookies")
+                options.add_argument("--disable-dev-shm-usage")
+                
+                # Set a more realistic viewport size
+                options.add_argument("--window-size=1920,1080")
+                
+                # Add timezone to appear more human-like
+                options.add_argument("--timezone=America/Los_Angeles")
+                
+                # Add random delays between actions using a custom JavaScript
+                prefs = {
+                    "profile.default_content_setting_values.notifications": 2,  # Block notifications
+                    "credentials_enable_service": False,  # Disable password saving prompts
+                    "profile.password_manager_enabled": False
+                }
+                options.add_experimental_option("prefs", prefs)
                 
                 self.browser = webdriver.Chrome(
                     service=ChromeService(ChromeDriverManager().install()),
@@ -476,6 +489,52 @@ class YosemiteSeleniumChecker:
                     except Exception as e:
                         logger.error(f"Failed to save results screenshot: {e}")
                     
+                    # Add a delay to simulate human reading the page
+                    time.sleep(random.uniform(2, 4))
+                    
+                    # Try to handle "Action Not Allowed" differently if detected
+                    if "Action Not Allowed" in self.browser.page_source:
+                        logger.warning("Detected 'Action Not Allowed' message - attempting recovery...")
+                        
+                        # Take a screenshot for debugging
+                        error_screenshot = f"action_not_allowed_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                        self.browser.save_screenshot(error_screenshot)
+                        
+                        # Try clearing cookies and visiting again with a different approach
+                        self.browser.delete_all_cookies()
+                        logger.info("Cleared cookies and cache")
+                        
+                        # Wait a bit
+                        time.sleep(random.uniform(5, 10))
+                        
+                        # Go to the homepage first
+                        base_url = self.config['urls']['base_url'].split("/Plan-Your-Trip")[0]
+                        logger.info(f"Visiting main site first: {base_url}")
+                        self.browser.get(base_url)
+                        time.sleep(random.uniform(4, 8))
+                        
+                        # Now try a more direct booking approach
+                        logger.info("Using alternate booking path...")
+                        try:
+                            # Look for a "Book Now" or similar link on the main page
+                            booking_selectors = [
+                                "//a[contains(text(), 'Book') or contains(@class, 'book')]",
+                                "//a[contains(text(), 'Reserve') or contains(@class, 'reserve')]",
+                                "//a[contains(text(), 'Stay') or contains(@class, 'stay')]",
+                                "//a[contains(text(), 'Lodging')]"
+                            ]
+                            
+                            for selector in booking_selectors:
+                                elements = self.browser.find_elements(By.XPATH, selector)
+                                if elements:
+                                    logger.info(f"Found booking link with selector: {selector}")
+                                    # Use JavaScript to click to avoid detection
+                                    self.browser.execute_script("arguments[0].click();", elements[0])
+                                    time.sleep(random.uniform(3, 5))
+                                    break
+                        except Exception as e:
+                            logger.error(f"Error during recovery attempt: {e}")
+                    
                     # Get page source after possible redirect
                     page_source = self.browser.page_source.lower()
                     
@@ -711,7 +770,21 @@ class YosemiteRequestsChecker:
                     book_buttons = soup.find_all(['button', 'a'], string=re.compile(r'Book|Reserve', re.IGNORECASE))
                     price_elements = soup.find_all(text=re.compile(r'\$\d+'))
                     
-                    has_availability = (rate_elements or book_buttons or price_elements) and not no_availability
+                    # Check for specific strings that strongly indicate availability
+                    available_phrases = [
+                        "add to cart",
+                        "book now",
+                        "reserve now",
+                        "best available rate",
+                        "average/night",
+                        "$"
+                    ]
+                    # SIMPLIFIED CHECK: if there's a price or rate element, it's available
+                    # This is a more permissive check to catch more availability
+                    has_dollar_sign = "$" in page_text
+                    
+                    # If we find prices or rate elements, that's enough to indicate availability
+                    has_availability = (rate_elements or book_buttons or price_elements or has_dollar_sign)
                     
                     if has_availability:
                         logger.info(f"Availability found for {format_date_for_display(check_in_date)}")
@@ -1017,6 +1090,386 @@ def run_availability_checker(config_path: str = "config.json", single_run: bool 
             logger.info("Retrying in 15 minutes...")
             time.sleep(900)
 
+def check_specific_date(date_str: str, config: Dict):
+    """Check availability for a specific date."""
+    try:
+        # Parse the date string (expecting MM-DD-YYYY format)
+        month, day, year = map(int, date_str.split('-'))
+        check_date = datetime.date(year, month, day)
+        logger.info(f"Checking specific date: {format_date_for_display(check_date)}")
+        
+        # Create a checker based on configured method
+        if config["method"].lower() == "selenium":
+            checker = YosemiteSeleniumChecker(config)
+        else:
+            checker = YosemiteRequestsChecker(config)
+        
+        # The next day for checkout
+        checkout_date = check_date + datetime.timedelta(days=1)
+        
+        # Initialize the browser if using Selenium
+        if isinstance(checker, YosemiteSeleniumChecker) and not checker.browser:
+            checker.setup_browser()
+        
+        try:
+            # Temporarily override config to check only this specific date
+            original_months_ahead = checker.config["months_ahead"]
+            checker.config["months_ahead"] = 24  # Allow checking dates further in the future
+            
+            check_in_str = format_date_for_url(check_date)
+            check_out_str = format_date_for_url(checkout_date)
+            adults = checker.config["adults"]
+            children = checker.config["children"]
+            
+            # Construct URL for the specified date
+            url = f"{config['urls']['base_url']}?ArrivalDate={check_in_str}&DepartureDate={check_out_str}&Adults={adults}&Children={children}"
+            logger.info(f"Checking URL: {url}")
+            
+            if isinstance(checker, YosemiteSeleniumChecker):
+                # More human-like browsing pattern - first go to the main site
+                base_url = config['urls']['base_url']
+                main_url = base_url.split('Plan-Your-Trip')[0]  # Get just the domain part
+                
+                logger.info(f"First visiting main page: {main_url}")
+                checker.browser.get(main_url)
+                
+                # Wait randomly like a human would
+                time.sleep(random.uniform(3, 5))
+                
+                # Now navigate to the search URL
+                logger.info(f"Now navigating to search URL: {url}")
+                checker.browser.get(url)
+                
+                # Add some randomized mouse movements to appear more human-like
+                try:
+                    # Simulate random mouse movements with JavaScript
+                    move_mouse_script = """
+                    function simulateMouseMovement() {
+                        let x = 100 + Math.floor(Math.random() * 600);
+                        let y = 100 + Math.floor(Math.random() * 400);
+                        
+                        let element = document.elementFromPoint(x, y);
+                        if (element) {
+                            element.dispatchEvent(new MouseEvent('mouseover', {
+                                bubbles: true,
+                                cancelable: true,
+                                view: window
+                            }));
+                        }
+                    }
+                    
+                    // Execute a few random movements
+                    for (let i = 0; i < 5; i++) {
+                        setTimeout(simulateMouseMovement, i * 300);
+                    }
+                    """
+                    checker.browser.execute_script(move_mouse_script)
+                except Exception:
+                    pass  # Ignore if this fails
+                
+                # Wait for page to load fully
+                WebDriverWait(checker.browser, 20).until(
+                    EC.presence_of_element_located((By.TAG_NAME, "body"))
+                )
+                
+                # Follow the same logic as in check_availability method
+                # Handle potential PleaseWait page
+                current_url = checker.browser.current_url
+                if "PleaseWait" in current_url:
+                    logger.info("Detected PleaseWait page, waiting for redirect...")
+                    wait_time = 0
+                    max_wait = 30
+                    
+                    while "PleaseWait" in checker.browser.current_url and wait_time < max_wait:
+                        time.sleep(1)
+                        wait_time += 1
+                    
+                    logger.info(f"After waiting, redirected to: {checker.browser.current_url}")
+                
+                # Rest of the check logic from YosemiteSeleniumChecker.check_availability
+                time.sleep(8)  # Allow time for AJAX calls
+                
+                # Try to submit the search form
+                try:
+                    # Try finding and clicking the submit button
+                    selectors = [
+                        "//button[contains(text(), 'Check Availability')]",
+                        "//input[@value='Check Availability']", 
+                        "//input[contains(@class, 'wxa-form-button')]",
+                        "//form[contains(@class, 'wxa-form')]//input[@type='submit']",
+                        "//button[contains(@class, 'btn-primary')]"
+                    ]
+                    
+                    button_found = False
+                    for selector in selectors:
+                        try:
+                            check_button = WebDriverWait(checker.browser, 2).until(
+                                EC.element_to_be_clickable((By.XPATH, selector))
+                            )
+                            logger.info(f"Found availability button using selector: {selector}")
+                            
+                            # Scroll to make button visible
+                            checker.browser.execute_script("arguments[0].scrollIntoView({block: 'center'});", check_button)
+                            time.sleep(random.uniform(0.8, 1.5))
+                            
+                            # Click the button
+                            checker.browser.execute_script("arguments[0].click();", check_button)
+                            logger.info("Clicked search button with JavaScript")
+                            
+                            button_found = True
+                            time.sleep(random.uniform(6, 10))
+                            break
+                        except Exception:
+                            continue
+                    
+                    # If direct button click fails, try alternatives
+                    if not button_found:
+                        # Try submitting the form with JavaScript
+                        try:
+                            form = checker.browser.find_element(By.XPATH, "//form[contains(@class, 'wxa-form')]")
+                            logger.info("Found search form, submitting with JavaScript")
+                            checker.browser.execute_script("arguments[0].submit();", form)
+                            time.sleep(7)
+                        except Exception as e:
+                            logger.debug(f"Could not submit form with JavaScript: {e}")
+                except Exception as e:
+                    logger.debug(f"Form interaction failed: {e}")
+                
+                # Save screenshot showing search results
+                search_screenshot = f"specific_date_{check_date.strftime('%Y%m%d')}.png"
+                try:
+                    checker.browser.save_screenshot(search_screenshot)
+                    logger.info(f"Search screenshot saved to {search_screenshot}")
+                except Exception as e:
+                    logger.error(f"Failed to save search screenshot: {e}")
+                
+                # Check if we're on a results page
+                current_url = checker.browser.current_url
+                logger.info(f"Current URL after search: {current_url}")
+                
+                # Handle PleaseWait redirect again
+                if "PleaseWait" in current_url:
+                    logger.info("Detected PleaseWait after form submission, waiting for redirect...")
+                    wait_time = 0
+                    max_wait = 30
+                    
+                    while "PleaseWait" in checker.browser.current_url and wait_time < max_wait:
+                        time.sleep(1)
+                        wait_time += 1
+                    
+                    current_url = checker.browser.current_url
+                    logger.info(f"After waiting, redirected to: {current_url}")
+                
+                # Check for results page patterns in URL
+                result_patterns = [
+                    "Accommodation-Search/Results", 
+                    "accommodation-search/results",
+                    "Availability", 
+                    "results",
+                    "search"
+                ]
+                
+                is_results_url = any(pattern in current_url.lower() for pattern in result_patterns)
+                
+                # Get page source
+                page_source = checker.browser.page_source.lower()
+                
+                # Log page title
+                page_title = checker.browser.title
+                logger.info(f"Page title: {page_title}")
+                
+                # Check only for serious error messages
+                error_phrases = [
+                    "action not allowed",
+                    "access denied",
+                    "forbidden"
+                ]
+                
+                # More exact matching for errors to avoid false positives
+                has_error = any(f" {phrase} " in f" {page_source.lower()} " for phrase in error_phrases)
+                if has_error:
+                    logger.error(f"Detected error phrase in page content: {[p for p in error_phrases if p in page_source.lower()]}")
+                
+                # Check for "No availability" text
+                no_availability_phrases = [
+                    "no availability",
+                    "not available", 
+                    "no rooms available",
+                    "sold out",
+                    "no lodging available",
+                    "no results found",
+                    "couldn't find any results",
+                    "we couldn't find any results"
+                ]
+                
+                no_availability_found = any(phrase in page_source.lower() for phrase in no_availability_phrases)
+                
+                # Check for results heading
+                results_heading = len(checker.browser.find_elements(By.XPATH, 
+                    "//h1[contains(text(), 'Results')] | //h2[contains(text(), 'Results')] | " + 
+                    "//div[contains(@class, 'results-heading')] | //div[contains(@class, 'results')]")) > 0
+                
+                # Look for positive indicators
+                has_book_button = len(checker.browser.find_elements(By.XPATH, 
+                    "//button[contains(text(), 'Book') or contains(text(), 'Reserve') or contains(text(), 'Select') or " + 
+                    "contains(@class, 'book') or contains(@class, 'reserve') or contains(@class, 'select')]")) > 0
+                
+                # Look for prices
+                try:
+                    price_elements1 = checker.browser.find_elements(By.XPATH, "//*[contains(text(), '$')]")
+                    price_elements2 = checker.browser.find_elements(By.XPATH, "//*[contains(@class, 'price')]")
+                    price_elements3 = checker.browser.find_elements(By.XPATH, "//*[contains(@class, 'rate')]")
+                    has_price = len(price_elements1) + len(price_elements2) + len(price_elements3) > 0
+                    logger.info(f"Found {len(price_elements1)} price texts, {len(price_elements2)} price elements, {len(price_elements3)} rate elements")
+                except Exception as e:
+                    logger.error(f"Error checking for price elements: {e}")
+                    has_price = False
+                
+                # Look for room items - expanded with more precise selectors for Yosemite's site
+                room_selectors = [
+                    "//div[contains(@class, 'room') or contains(@class, 'accommodation') or contains(@class, 'result-item') or contains(@class, 'lodging')]",
+                    "//*[contains(text(), 'Traditional Room')]",
+                    "//*[contains(text(), 'Double Beds')]",
+                    "//*[contains(text(), 'ADD TO CART')]",
+                    "//button[contains(@class, 'cart')]",
+                    "//*[contains(text(), 'AVERAGE/NIGHT')]"
+                ]
+                
+                # Check each selector and report success if any match
+                has_room_details = False
+                for selector in room_selectors:
+                    elements = checker.browser.find_elements(By.XPATH, selector)
+                    if elements:
+                        has_room_details = True
+                        logger.info(f"Found room details with selector: {selector} ({len(elements)} elements)")
+                        break
+                
+                # Check if page has loaded search results
+                is_search_form_visible = "search" in page_source.lower() and "check availability" in page_source.lower()
+                
+                # Determine if we're on a results page
+                is_results_page = (
+                    is_results_url or 
+                    results_heading or 
+                    "results" in page_title.lower() or
+                    "availability" in page_title.lower() or
+                    ("search results" in page_source.lower() and not is_search_form_visible)
+                )
+                
+                # Log what we found
+                logger.info(f"Has error message: {has_error}")
+                logger.info(f"No availability phrases found: {no_availability_found}")
+                logger.info(f"Has book button: {has_book_button}")
+                logger.info(f"Has price: {has_price}")
+                logger.info(f"Has room details: {has_room_details}")
+                logger.info(f"Is results page: {is_results_page}")
+                
+                # SIMPLIFIED AVAILABILITY CHECK
+                # If we find price information or room details, consider it available
+                
+                # Check if we see a dollar amount in the page text, which is a strong indicator of availability
+                dollar_amount_pattern = re.compile(r'\$\d+')
+                has_dollar_amount = bool(dollar_amount_pattern.search(page_source))
+                
+                logger.info(f"Has dollar amount: {has_dollar_amount}")
+                
+                # ROOM DETAILS FOCUSED CHECK
+                # Room details seems to be the most reliable indicator
+                # Only consider it available if room details are found
+                true_availability = has_room_details
+                
+                # Log the decision criteria
+                logger.info(f"Final availability determination: {true_availability} (based on room details)")
+                
+                if true_availability:
+                    logger.info(f"TRUE AVAILABILITY FOUND for {format_date_for_display(check_date)}")
+                    available_dates = [check_date]
+                    consecutive_pairs = [(check_date, checkout_date)]
+                    
+                    # Send email notification
+                    send_email_notification(config, available_dates, consecutive_pairs)
+                else:
+                    logger.info(f"No availability found for {format_date_for_display(check_date)}")
+            else:
+                # For RequestsChecker implementation
+                response = checker.session.get(url)
+                response.raise_for_status()
+                
+                # Parse the response to check for availability
+                soup = BeautifulSoup(response.text, "html.parser")
+                
+                # Check for "No availability" message
+                no_availability_phrases = [
+                    "no availability",
+                    "not available", 
+                    "no rooms available",
+                    "sold out",
+                    "no lodging available",
+                    "no results found",
+                    "couldn't find any results",
+                    "we couldn't find any results"
+                ]
+                
+                page_text = soup.get_text().lower()
+                no_availability = any(phrase in page_text for phrase in no_availability_phrases)
+                
+                # Look for booking elements
+                rate_elements = soup.find_all('div', class_=lambda c: c and ('rate' in c.lower() or 'room' in c.lower()))
+                book_buttons = soup.find_all(['button', 'a'], string=re.compile(r'Book|Reserve', re.IGNORECASE))
+                price_elements = soup.find_all(text=re.compile(r'\$\d+'))
+                
+                # Check for specific strings that strongly indicate availability
+                available_phrases = [
+                    "add to cart",
+                    "book now",
+                    "reserve now",
+                    "best available rate",
+                    "average/night",
+                    "$"
+                ]
+                # ROOM DETAILS FOCUSED CHECK
+                # Look specifically for room details which are the most reliable indicator
+                room_text_indicators = [
+                    "traditional room", 
+                    "double beds",
+                    "add to cart",
+                    "best available rate",
+                    "average/night"
+                ]
+                
+                has_room_text = any(indicator in page_text for indicator in room_text_indicators)
+                
+                # Focus on rate elements and room text indicators as the most reliable
+                has_availability = (rate_elements or has_room_text)
+                
+                logger.info(f"Has room text indicators: {has_room_text}")
+                logger.info(f"Final availability determination: {has_availability} (based on room details and rates)")
+                
+                if has_availability:
+                    logger.info(f"Availability found for {format_date_for_display(check_date)}")
+                    available_dates = [check_date]
+                    consecutive_pairs = [(check_date, checkout_date)]
+                    
+                    # Send email notification
+                    send_email_notification(config, available_dates, consecutive_pairs)
+                else:
+                    logger.info(f"No availability found for {format_date_for_display(check_date)}")
+            
+            # Restore original config
+            checker.config["months_ahead"] = original_months_ahead
+            
+        finally:
+            # Clean up
+            if isinstance(checker, YosemiteSeleniumChecker) and checker.browser:
+                checker.browser.quit()
+    
+    except ValueError:
+        logger.error(f"Invalid date format: {date_str}. Please use MM-DD-YYYY format.")
+    except Exception as e:
+        logger.error(f"Error checking specific date: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+
 def main():
     """Parse command line arguments and run the script."""
     parser = argparse.ArgumentParser(description="Yosemite Valley Lodge Availability Checker")
@@ -1028,6 +1481,8 @@ def main():
                         help="Enable debug logging")
     parser.add_argument("-t", "--test-email", action="store_true",
                         help="Send a test email and exit")
+    parser.add_argument("--date", type=str, 
+                        help="Check a specific date (format: MM-DD-YYYY)")
     
     args = parser.parse_args()
     
@@ -1042,6 +1497,11 @@ def main():
         test_dates = [test_date]
         test_consecutive = [(test_date, test_date + datetime.timedelta(days=1))]
         send_email_notification(config, test_dates, test_consecutive)
+        sys.exit(0)
+    
+    if args.date:
+        # Check a specific date
+        check_specific_date(args.date, config)
         sys.exit(0)
     
     run_availability_checker(args.config, args.single_run)

@@ -16,6 +16,9 @@ elif [ "$1" == "debug" ]; then
 elif [ "$1" == "continuous" ]; then
   echo "Running in continuous mode..."
   MODE=""
+elif [ "$1" == "date" ] && [ -n "$2" ]; then
+  echo "Checking specific date: $2..."
+  MODE="--date $2 --debug"
 elif [ "$1" == "update-email" ]; then
   # Get current email settings first
   EMAIL_USERNAME=$(grep -o '"username": *"[^"]*"' config.json | cut -d'"' -f4)
@@ -86,6 +89,7 @@ echo "Starting Yosemite availability checker..."
 echo "This script checks for weekend availability at Yosemite Valley Lodge."
 echo "It will save screenshots of search results and send email notifications if availability is found."
 echo "Run './run_checker.sh update-email' if you need to update your email credentials."
+echo "Run './run_checker.sh date MM-DD-YYYY' to check a specific date (e.g., 04-07-2025)."
 echo ""
 
 # Run the checker script
