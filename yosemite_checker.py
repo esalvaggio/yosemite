@@ -303,10 +303,11 @@ class YosemiteSeleniumChecker:
                     # Check for "Action Not Allowed" message
                     if "Action Not Allowed" in self.browser.page_source:
                         logger.error("Detected 'Action Not Allowed' message - site may be blocking automated access")
-                        # Take a screenshot of the error
-                        error_screenshot = f"error_{check_in_date.strftime('%Y%m%d')}.png"
-                        self.browser.save_screenshot(error_screenshot)
-                        logger.info(f"Error screenshot saved to {error_screenshot}")
+                        # Take a screenshot of the error only in debug mode
+                        if logger.level <= logging.DEBUG:
+                            error_screenshot = f"error_{check_in_date.strftime('%Y%m%d')}.png"
+                            self.browser.save_screenshot(error_screenshot)
+                            logger.info(f"Error screenshot saved to {error_screenshot}")
                         
                         # Try a different approach - use a more deliberate, human-like interaction
                         logger.info("Trying alternative approach with slower, more human-like interaction...")
@@ -419,12 +420,14 @@ class YosemiteSeleniumChecker:
                         logger.debug(f"Form interaction failed: {e}")
                     
                     # Save first screenshot showing search page or early results
-                    search_screenshot = f"search_{check_in_date.strftime('%Y%m%d')}.png"
-                    try:
-                        self.browser.save_screenshot(search_screenshot)
-                        logger.info(f"Search screenshot saved to {search_screenshot}")
-                    except Exception as e:
-                        logger.error(f"Failed to save search screenshot: {e}")
+                    # Save search screenshot only in debug mode
+                    if logger.level <= logging.DEBUG:
+                        search_screenshot = f"search_{check_in_date.strftime('%Y%m%d')}.png"
+                        try:
+                            self.browser.save_screenshot(search_screenshot)
+                            logger.info(f"Search screenshot saved to {search_screenshot}")
+                        except Exception as e:
+                            logger.error(f"Failed to save search screenshot: {e}")
                     
                     # Check if we're on a results page by looking at URL and page content
                     current_url = self.browser.current_url
@@ -482,12 +485,14 @@ class YosemiteSeleniumChecker:
                             logger.error(f"Failed to submit form with aggressive method: {e}")
                     
                     # Save screenshot for results verification
-                    results_screenshot = f"availability_{check_in_date.strftime('%Y%m%d')}.png"
-                    try:
-                        self.browser.save_screenshot(results_screenshot)
-                        logger.info(f"Results screenshot saved to {results_screenshot}")
-                    except Exception as e:
-                        logger.error(f"Failed to save results screenshot: {e}")
+                    # Save results screenshot only in debug mode
+                    if logger.level <= logging.DEBUG:
+                        results_screenshot = f"availability_{check_in_date.strftime('%Y%m%d')}.png"
+                        try:
+                            self.browser.save_screenshot(results_screenshot)
+                            logger.info(f"Results screenshot saved to {results_screenshot}")
+                        except Exception as e:
+                            logger.error(f"Failed to save results screenshot: {e}")
                     
                     # Add a delay to simulate human reading the page
                     time.sleep(random.uniform(2, 4))
@@ -496,9 +501,11 @@ class YosemiteSeleniumChecker:
                     if "Action Not Allowed" in self.browser.page_source:
                         logger.warning("Detected 'Action Not Allowed' message - attempting recovery...")
                         
-                        # Take a screenshot for debugging
-                        error_screenshot = f"action_not_allowed_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
-                        self.browser.save_screenshot(error_screenshot)
+                        # Take a screenshot for debugging only in debug mode
+                        if logger.level <= logging.DEBUG:
+                            error_screenshot = f"action_not_allowed_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                            self.browser.save_screenshot(error_screenshot)
+                            logger.info(f"Action Not Allowed screenshot saved to {error_screenshot}")
                         
                         # Try clearing cookies and visiting again with a different approach
                         self.browser.delete_all_cookies()
@@ -1236,12 +1243,14 @@ def check_specific_date(date_str: str, config: Dict):
                     logger.debug(f"Form interaction failed: {e}")
                 
                 # Save screenshot showing search results
-                search_screenshot = f"specific_date_{check_date.strftime('%Y%m%d')}.png"
-                try:
-                    checker.browser.save_screenshot(search_screenshot)
-                    logger.info(f"Search screenshot saved to {search_screenshot}")
-                except Exception as e:
-                    logger.error(f"Failed to save search screenshot: {e}")
+                # Save screenshot only in debug mode
+                if logger.level <= logging.DEBUG:
+                    search_screenshot = f"specific_date_{check_date.strftime('%Y%m%d')}.png"
+                    try:
+                        checker.browser.save_screenshot(search_screenshot)
+                        logger.info(f"Search screenshot saved to {search_screenshot}")
+                    except Exception as e:
+                        logger.error(f"Failed to save search screenshot: {e}")
                 
                 # Check if we're on a results page
                 current_url = checker.browser.current_url
