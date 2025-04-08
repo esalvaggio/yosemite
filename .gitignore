@@ -1,0 +1,19 @@
+# Ignore logs
+*.log
+
+# Ignore screenshots
+*.png
+
+# Ignore virtual environment
+yosemite_env/
+
+# Ignore previous results
+last_results.json
+
+# Ignore any temporary files
+*.tmp
+
+# Ignore Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class

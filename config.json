@@ -1,0 +1,30 @@
+{
+  "method": "selenium",
+  "browser": "chrome",
+  "headless": true,
+  "check_interval_hours": 3,
+  "interval_variation_percent": 20,
+  "months_ahead": 6,
+  "weekends_only": true,
+  "check_friday_saturday": true,
+  "check_saturday_sunday": true,
+  "email": {
+    "enabled": true,
+    "smtp_server": "smtp.gmail.com",
+    "smtp_port": 587,
+    "username": "",
+    "password": "",
+    "from_address": "",
+    "to_address": "",
+    "consecutive_subject": "Consecutive Weekend Available at Yosemite Valley Lodge!",
+    "single_day_subject": "Weekend Day Available at Yosemite Valley Lodge"
+  },
+  "urls": {
+    "base_url": "https://reservations.ahlsmsworld.com/Yosemite/Plan-Your-Trip/Accommodations/Yosemite-Valley-Lodge/",
+    "widget_config_url": "https://reservations.ahlsmsworld.com/Yosemite/Search/GetWidgetConfigData"
+  },
+  "max_retries": 3,
+  "retry_delay_seconds": 60,
+  "adults": 1,
+  "children": 0
+}
