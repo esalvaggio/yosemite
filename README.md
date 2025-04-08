@@ -1,5 +1,5 @@
 # Yosemite Valley Lodge Availability Checker
-In collaboration with claude code. This cost $8.14 in claude credits
+In collaboration with claude code. This cost $8.83 in claude credits
 
 A Python script that automatically checks for weekend availability at Yosemite Valley Lodge and sends email notifications when rooms become available.
 
