@@ -862,6 +862,9 @@ def send_email_notification(config: Dict, available_dates: List[datetime.date], 
         # Create email body content
         email_body = "Yosemite Valley Lodge Availability Alert\n\n"
         
+        # Determine if this is weekday or weekend availability
+        all_weekend_days = all(d.weekday() >= 4 for d in available_dates)  # 4=Fri, 5=Sat, 6=Sun
+        
         if consecutive_pairs:
             email_body += "Consecutive weekend days available:\n"
             for start_date, end_date in consecutive_pairs:
@@ -869,9 +872,14 @@ def send_email_notification(config: Dict, available_dates: List[datetime.date], 
             email_body += "\n"
         
         if available_dates:
-            email_body += "All available weekend days:\n"
+            if all_weekend_days:
+                email_body += "All available weekend days:\n"
+            else:
+                email_body += "Available days:\n"
+                
             for date in sorted(available_dates):
-                email_body += f"* {format_date_for_display(date)}\n"
+                day_type = "WEEKEND" if date.weekday() >= 4 else "WEEKDAY"
+                email_body += f"* {format_date_for_display(date)} ({day_type})\n"
         
         # Generate direct booking URLs for found dates
         email_body += "\nDirect booking links:\n"
@@ -891,11 +899,18 @@ def send_email_notification(config: Dict, available_dates: List[datetime.date], 
         # Create a simple MIME message
         msg = MIMEMultipart()
         
+        # Determine if this is weekday or weekend availability
+        all_weekend_days = all(d.weekday() >= 4 for d in available_dates)  # 4=Fri, 5=Sat, 6=Sun
+        is_monday_to_thursday = any(d.weekday() < 4 for d in available_dates)
+        
         # Set the subject
         if consecutive_pairs:
             msg["Subject"] = config["email"]["consecutive_subject"]
-        else:
+        elif all_weekend_days:
             msg["Subject"] = config["email"]["single_day_subject"]
+        else:
+            # Specify weekday in the subject for non-weekend days
+            msg["Subject"] = f"Weekday Available at Yosemite Valley Lodge!"
         
         # Use proper email formatting
         from_addr = config["email"]["from_address"]
@@ -1393,7 +1408,19 @@ def check_specific_date(date_str: str, config: Dict):
                 if true_availability:
                     logger.info(f"TRUE AVAILABILITY FOUND for {format_date_for_display(check_date)}")
                     available_dates = [check_date]
-                    consecutive_pairs = [(check_date, checkout_date)]
+                    
+                    # Only consider it a consecutive pair if it's a weekend (Fri-Sat or Sat-Sun)
+                    is_weekend_consecutive = (
+                        (check_date.weekday() == 4 and checkout_date.weekday() == 5) or  # Fri-Sat
+                        (check_date.weekday() == 5 and checkout_date.weekday() == 6)     # Sat-Sun
+                    )
+                    
+                    if is_weekend_consecutive:
+                        logger.info("Found consecutive WEEKEND days")
+                        consecutive_pairs = [(check_date, checkout_date)]
+                    else:
+                        logger.info("Found availability but not consecutive weekend days")
+                        consecutive_pairs = []
                     
                     # Send email notification
                     send_email_notification(config, available_dates, consecutive_pairs)
@@ -1457,7 +1484,19 @@ def check_specific_date(date_str: str, config: Dict):
                 if has_availability:
                     logger.info(f"Availability found for {format_date_for_display(check_date)}")
                     available_dates = [check_date]
-                    consecutive_pairs = [(check_date, checkout_date)]
+                    
+                    # Only consider it a consecutive pair if it's a weekend (Fri-Sat or Sat-Sun)
+                    is_weekend_consecutive = (
+                        (check_date.weekday() == 4 and checkout_date.weekday() == 5) or  # Fri-Sat
+                        (check_date.weekday() == 5 and checkout_date.weekday() == 6)     # Sat-Sun
+                    )
+                    
+                    if is_weekend_consecutive:
+                        logger.info("Found consecutive WEEKEND days")
+                        consecutive_pairs = [(check_date, checkout_date)]
+                    else:
+                        logger.info("Found availability but not consecutive weekend days")
+                        consecutive_pairs = []
                     
                     # Send email notification
                     send_email_notification(config, available_dates, consecutive_pairs)
